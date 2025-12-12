@@ -5,9 +5,22 @@
 	let { data }: { data: PageData } = $props();
 
 	let editingId = $state<number | null>(null);
+	let addFrequency = $state<'monthly' | 'annual' | 'every_n_months'>('monthly');
 
 	function formatCurrency(amount: number): string {
 		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+	}
+
+	function formatDueDate(bill: any): string {
+		if (!bill.nextDueDate) return `${getOrdinal(bill.due_day)}`;
+		const date = new Date(bill.nextDueDate);
+		return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+	}
+
+	function formatFrequency(bill: any): string {
+		if (bill.frequency === 'annual') return 'Annual';
+		if (bill.frequency === 'every_n_months') return `Every ${bill.frequency_months} mo`;
+		return 'Monthly';
 	}
 
 	function getOrdinal(n: number): string {
@@ -17,7 +30,7 @@
 	}
 
 	const upcomingTotal = $derived(
-		data.upcomingBills.reduce((sum, bill) => sum + bill.amount, 0)
+		data.upcomingBills.reduce((sum, bill) => sum + bill.effectiveAmount, 0)
 	);
 </script>
 
@@ -34,11 +47,29 @@
 					<ul class="space-y-2">
 						{#each data.upcomingBills as bill}
 							<li class="flex justify-between items-center">
-								<span>
-									{bill.name}
-									<span class="text-amber-400/70 text-sm">({getOrdinal(bill.due_day)})</span>
-								</span>
-								<span class="font-mono">{formatCurrency(bill.amount)}</span>
+								<div class="flex items-center gap-2">
+									<span>
+										{bill.name}
+										<span class="text-amber-400/70 text-sm">({formatDueDate(bill)})</span>
+									</span>
+									{#if bill.isOverdue}
+										<span class="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded font-medium">
+											OVERDUE ({bill.overdueCount})
+										</span>
+									{/if}
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="font-mono">{formatCurrency(bill.effectiveAmount)}</span>
+									<form method="POST" action="?/markPaid" use:enhance>
+										<input type="hidden" name="id" value={bill.id} />
+										<button
+											type="submit"
+											class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded transition-colors"
+										>
+											Paid
+										</button>
+									</form>
+								</div>
 							</li>
 						{/each}
 					</ul>
@@ -54,38 +85,59 @@
 
 		<div class="bg-gray-800 rounded-lg p-4 mb-6">
 			<h2 class="text-lg font-semibold mb-3">Add Bill</h2>
-			<form method="POST" action="?/add" class="flex flex-col sm:flex-row gap-3">
-				<input
-					type="text"
-					name="name"
-					placeholder="Bill name"
-					required
-					class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-				/>
-				<input
-					type="number"
-					name="amount"
-					placeholder="Amount"
-					step="0.01"
-					min="0.01"
-					required
-					class="w-full sm:w-28 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-				/>
-				<input
-					type="number"
-					name="due_day"
-					placeholder="Day"
-					min="1"
-					max="31"
-					required
-					class="w-full sm:w-20 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-				/>
-				<button
-					type="submit"
-					class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium transition-colors"
-				>
-					Add
-				</button>
+			<form method="POST" action="?/add" class="space-y-3" use:enhance>
+				<div class="flex flex-col sm:flex-row gap-3">
+					<input
+						type="text"
+						name="name"
+						placeholder="Bill name"
+						required
+						class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+					/>
+					<input
+						type="number"
+						name="amount"
+						placeholder="Amount"
+						step="0.01"
+						min="0.01"
+						required
+						class="w-full sm:w-28 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+					/>
+				</div>
+				<div class="flex flex-col sm:flex-row gap-3">
+					<select
+						name="frequency"
+						bind:value={addFrequency}
+						class="bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+					>
+						<option value="monthly">Monthly</option>
+						<option value="annual">Annual</option>
+						<option value="every_n_months">Every N Months</option>
+					</select>
+					{#if addFrequency === 'every_n_months'}
+						<input
+							type="number"
+							name="frequency_months"
+							placeholder="Months"
+							min="1"
+							max="12"
+							required
+							class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+						/>
+					{/if}
+					<input
+						type="date"
+						name="anchor_date"
+						required
+						class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+					/>
+					<button
+						type="submit"
+						class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium transition-colors"
+					>
+						Add
+					</button>
+				</div>
 			</form>
 		</div>
 
@@ -96,54 +148,80 @@
 					{#each data.bills as bill}
 						<li class="py-2 border-b border-gray-700 last:border-0">
 							{#if editingId === bill.id}
-								<form method="POST" action="?/edit" class="flex flex-col sm:flex-row gap-2" use:enhance={() => { return async ({ update }) => { await update(); editingId = null; }; }}>
+								<form method="POST" action="?/edit" class="space-y-2" use:enhance={() => { return async ({ update }) => { await update(); editingId = null; }; }}>
 									<input type="hidden" name="id" value={bill.id} />
-									<input
-										type="text"
-										name="name"
-										value={bill.name}
-										required
-										class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-									/>
-									<input
-										type="number"
-										name="amount"
-										value={bill.amount}
-										step="0.01"
-										min="0.01"
-										required
-										class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-									/>
-									<input
-										type="number"
-										name="due_day"
-										value={bill.due_day}
-										min="1"
-										max="31"
-										required
-										class="w-full sm:w-16 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
-									/>
-									<div class="flex gap-2">
-										<button
-											type="submit"
-											class="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+									<div class="flex flex-col sm:flex-row gap-2">
+										<input
+											type="text"
+											name="name"
+											value={bill.name}
+											required
+											class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+										/>
+										<input
+											type="number"
+											name="amount"
+											value={bill.amount}
+											step="0.01"
+											min="0.01"
+											required
+											class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+										/>
+									</div>
+									<div class="flex flex-col sm:flex-row gap-2">
+										<select
+											name="frequency"
+											value={bill.frequency}
+											class="bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
 										>
-											Save
-										</button>
-										<button
-											type="button"
-											onclick={() => editingId = null}
-											class="bg-gray-600 hover:bg-gray-500 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-										>
-											Cancel
-										</button>
+											<option value="monthly">Monthly</option>
+											<option value="annual">Annual</option>
+											<option value="every_n_months">Every N Months</option>
+										</select>
+										<input
+											type="number"
+											name="frequency_months"
+											value={bill.frequency_months || ''}
+											placeholder="Months"
+											min="1"
+											max="12"
+											class="w-full sm:w-20 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+										/>
+										<input
+											type="date"
+											name="anchor_date"
+											value={bill.anchor_date || ''}
+											class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+										/>
+										<div class="flex gap-2">
+											<button
+												type="submit"
+												class="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+											>
+												Save
+											</button>
+											<button
+												type="button"
+												onclick={() => editingId = null}
+												class="bg-gray-600 hover:bg-gray-500 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+											>
+												Cancel
+											</button>
+										</div>
 									</div>
 								</form>
 							{:else}
 								<div class="flex justify-between items-center">
 									<div>
 										<span class="font-medium">{bill.name}</span>
-										<span class="text-gray-400 text-sm ml-2">Due: {getOrdinal(bill.due_day)}</span>
+										<span class="text-gray-400 text-sm ml-2">
+											{formatFrequency(bill)} - Due: {formatDueDate(bill)}
+										</span>
+										{#if bill.isOverdue}
+											<span class="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded font-medium ml-2">
+												OVERDUE ({bill.overdueCount})
+											</span>
+										{/if}
 									</div>
 									<div class="flex items-center gap-3">
 										<span class="font-mono">{formatCurrency(bill.amount)}</span>
@@ -154,7 +232,7 @@
 										>
 											Edit
 										</button>
-										<form method="POST" action="?/delete">
+										<form method="POST" action="?/delete" use:enhance>
 											<input type="hidden" name="id" value={bill.id} />
 											<button
 												type="submit"

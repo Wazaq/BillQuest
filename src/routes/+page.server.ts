@@ -1,69 +1,220 @@
 import type { PageServerLoad, Actions } from './$types';
 import { fail } from '@sveltejs/kit';
 
-interface Bill {
+type Frequency = 'monthly' | 'annual' | 'every_n_months';
+
+interface BillRow {
 	id: number;
 	name: string;
 	amount: number;
 	due_day: number;
+	frequency: Frequency;
+	frequency_months: number | null;
+	anchor_date: string | null;
+	paid_through: string | null;
+}
+
+export interface Bill extends BillRow {
+	nextDueDate: Date;
+	isDue: boolean;
+	isOverdue: boolean;
+	overdueCount: number;
+	effectiveAmount: number;
 }
 
 function getNextFriday(): Date {
 	const today = new Date();
 	const dayOfWeek = today.getDay();
-	const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7; // If today is Friday, get next Friday
+	const daysUntilFriday = (5 - dayOfWeek + 7) % 7 || 7;
 	const nextFriday = new Date(today);
 	nextFriday.setDate(today.getDate() + daysUntilFriday);
+	nextFriday.setHours(23, 59, 59, 999);
 	return nextFriday;
 }
 
-function isBillDueBeforeDate(billDueDay: number, targetDate: Date, today: Date): boolean {
-	const currentMonth = today.getMonth();
-	const currentYear = today.getFullYear();
-	const targetMonth = targetDate.getMonth();
-	const targetYear = targetDate.getFullYear();
+function parseDate(dateStr: string | null): Date | null {
+	if (!dateStr) return null;
+	const d = new Date(dateStr + 'T00:00:00');
+	return isNaN(d.getTime()) ? null : d;
+}
 
-	// Check if bill is due this month and before target date
-	if (currentYear === targetYear && currentMonth === targetMonth) {
-		// Bill due this month, after today, before or on target
-		if (billDueDay > today.getDate() && billDueDay <= targetDate.getDate()) {
-			return true;
+function startOfDay(date: Date): Date {
+	const d = new Date(date);
+	d.setHours(0, 0, 0, 0);
+	return d;
+}
+
+function getNextDueDate(bill: BillRow, today: Date): Date {
+	const anchor = parseDate(bill.anchor_date);
+	const anchorDay = anchor ? anchor.getDate() : bill.due_day;
+
+	if (bill.frequency === 'monthly') {
+		// Find next monthly due date
+		const thisMonth = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+		if (thisMonth >= startOfDay(today)) {
+			return thisMonth;
 		}
+		// Next month
+		return new Date(today.getFullYear(), today.getMonth() + 1, anchorDay);
 	}
 
-	// If target date is in next month, also check next month's bills
-	if (targetYear > currentYear || targetMonth > currentMonth) {
-		// Bills due early next month up to target date
-		if (billDueDay <= targetDate.getDate()) {
-			return true;
+	if (bill.frequency === 'annual' && anchor) {
+		// Find next annual due date
+		const thisYear = new Date(today.getFullYear(), anchor.getMonth(), anchor.getDate());
+		if (thisYear >= startOfDay(today)) {
+			return thisYear;
 		}
-		// Bills due rest of this month after today
-		if (billDueDay > today.getDate()) {
-			return true;
-		}
+		return new Date(today.getFullYear() + 1, anchor.getMonth(), anchor.getDate());
 	}
 
-	return false;
+	if (bill.frequency === 'every_n_months' && anchor && bill.frequency_months) {
+		// Calculate next occurrence based on anchor + N month intervals
+		const months = bill.frequency_months;
+		let candidate = new Date(anchor);
+
+		while (candidate < startOfDay(today)) {
+			candidate.setMonth(candidate.getMonth() + months);
+		}
+		return candidate;
+	}
+
+	// Fallback to monthly behavior
+	const thisMonth = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+	if (thisMonth >= startOfDay(today)) {
+		return thisMonth;
+	}
+	return new Date(today.getFullYear(), today.getMonth() + 1, anchorDay);
+}
+
+function calculateOverdue(bill: BillRow, today: Date): { isOverdue: boolean; overdueCount: number; nextDueDate: Date } {
+	const paidThrough = parseDate(bill.paid_through);
+	const anchor = parseDate(bill.anchor_date);
+	const anchorDay = anchor ? anchor.getDate() : bill.due_day;
+
+	let overdueCount = 0;
+	let checkDate: Date;
+
+	if (bill.frequency === 'monthly') {
+		// Start from anchor or a reasonable starting point
+		checkDate = anchor ? new Date(anchor) : new Date(today.getFullYear(), today.getMonth(), anchorDay);
+
+		// Go back to find earliest unpaid
+		while (checkDate > (paidThrough || new Date(0))) {
+			checkDate.setMonth(checkDate.getMonth() - 1);
+		}
+		checkDate.setMonth(checkDate.getMonth() + 1);
+
+		// Count overdue periods
+		const todayStart = startOfDay(today);
+		while (checkDate < todayStart && (!paidThrough || checkDate > paidThrough)) {
+			overdueCount++;
+			checkDate.setMonth(checkDate.getMonth() + 1);
+		}
+
+		return {
+			isOverdue: overdueCount > 0,
+			overdueCount,
+			nextDueDate: getNextDueDate(bill, today)
+		};
+	}
+
+	if (bill.frequency === 'annual' && anchor) {
+		checkDate = new Date(anchor);
+		const todayStart = startOfDay(today);
+
+		while (checkDate < todayStart) {
+			if (!paidThrough || checkDate > paidThrough) {
+				overdueCount++;
+			}
+			checkDate.setFullYear(checkDate.getFullYear() + 1);
+		}
+
+		return {
+			isOverdue: overdueCount > 0,
+			overdueCount,
+			nextDueDate: getNextDueDate(bill, today)
+		};
+	}
+
+	if (bill.frequency === 'every_n_months' && anchor && bill.frequency_months) {
+		checkDate = new Date(anchor);
+		const months = bill.frequency_months;
+		const todayStart = startOfDay(today);
+
+		while (checkDate < todayStart) {
+			if (!paidThrough || checkDate > paidThrough) {
+				overdueCount++;
+			}
+			checkDate.setMonth(checkDate.getMonth() + months);
+		}
+
+		return {
+			isOverdue: overdueCount > 0,
+			overdueCount,
+			nextDueDate: getNextDueDate(bill, today)
+		};
+	}
+
+	return {
+		isOverdue: false,
+		overdueCount: 0,
+		nextDueDate: getNextDueDate(bill, today)
+	};
+}
+
+function processBill(row: BillRow, today: Date, nextFriday: Date): Bill {
+	const { isOverdue, overdueCount, nextDueDate } = calculateOverdue(row, today);
+	const paidThrough = parseDate(row.paid_through);
+
+	// Bill is due if:
+	// 1. It's overdue (unpaid past cycles), OR
+	// 2. Next due date is before next Friday AND not already paid for that cycle
+	const isPaidForNextCycle = paidThrough && paidThrough >= nextDueDate;
+	const isDueBeforeFriday = nextDueDate <= nextFriday && !isPaidForNextCycle;
+	const isDue = isOverdue || isDueBeforeFriday;
+
+	// Effective amount includes overdue cycles plus current if due
+	let effectiveAmount = row.amount * overdueCount;
+	if (isDueBeforeFriday && !isOverdue) {
+		effectiveAmount = row.amount;
+	} else if (isDueBeforeFriday && isOverdue) {
+		// Check if next due is also in window
+		effectiveAmount = row.amount * (overdueCount + 1);
+	}
+
+	return {
+		...row,
+		nextDueDate,
+		isDue,
+		isOverdue,
+		overdueCount,
+		effectiveAmount: effectiveAmount || row.amount
+	};
 }
 
 export const load: PageServerLoad = async ({ platform }) => {
 	const db = platform?.env?.DB;
 	if (!db) {
-		return { bills: [], upcomingBills: [], nextFriday: null };
+		return { bills: [], upcomingBills: [], nextFriday: null, today: null };
 	}
 
-	const { results } = await db.prepare('SELECT * FROM bills ORDER BY due_day ASC').all<Bill>();
-	const bills = results || [];
+	const { results } = await db.prepare('SELECT * FROM bills ORDER BY due_day ASC').all<BillRow>();
+	const rows = results || [];
 
 	const today = new Date();
 	const nextFriday = getNextFriday();
 
-	const upcomingBills = bills.filter((bill) => isBillDueBeforeDate(bill.due_day, nextFriday, today));
+	const bills: Bill[] = rows.map((row: BillRow) => processBill(row, today, nextFriday));
+	const upcomingBills = bills.filter(bill => bill.isDue);
+
+	// Sort upcoming by next due date
+	upcomingBills.sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime());
 
 	return {
 		bills,
 		upcomingBills,
-		nextFriday: nextFriday.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+		nextFriday: nextFriday.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }),
+		today: today.toISOString().split('T')[0]
 	};
 };
 
@@ -75,13 +226,18 @@ export const actions: Actions = {
 		const data = await request.formData();
 		const name = data.get('name')?.toString().trim();
 		const amount = parseFloat(data.get('amount')?.toString() || '0');
-		const due_day = parseInt(data.get('due_day')?.toString() || '0');
+		const frequency = (data.get('frequency')?.toString() || 'monthly') as Frequency;
+		const frequency_months = frequency === 'every_n_months' ? parseInt(data.get('frequency_months')?.toString() || '1') : null;
+		const anchor_date = data.get('anchor_date')?.toString() || null;
+		const due_day = anchor_date ? new Date(anchor_date + 'T00:00:00').getDate() : parseInt(data.get('due_day')?.toString() || '1');
 
 		if (!name) return fail(400, { error: 'Name is required' });
 		if (amount <= 0) return fail(400, { error: 'Amount must be greater than 0' });
-		if (due_day < 1 || due_day > 31) return fail(400, { error: 'Due day must be between 1 and 31' });
+		if (!anchor_date) return fail(400, { error: 'Due date is required' });
 
-		await db.prepare('INSERT INTO bills (name, amount, due_day) VALUES (?, ?, ?)').bind(name, amount, due_day).run();
+		await db.prepare(
+			'INSERT INTO bills (name, amount, due_day, frequency, frequency_months, anchor_date) VALUES (?, ?, ?, ?, ?, ?)'
+		).bind(name, amount, due_day, frequency, frequency_months, anchor_date).run();
 
 		return { success: true };
 	},
@@ -108,15 +264,35 @@ export const actions: Actions = {
 		const id = parseInt(data.get('id')?.toString() || '0');
 		const name = data.get('name')?.toString().trim();
 		const amount = parseFloat(data.get('amount')?.toString() || '0');
-		const due_day = parseInt(data.get('due_day')?.toString() || '0');
+		const frequency = (data.get('frequency')?.toString() || 'monthly') as Frequency;
+		const frequency_months = frequency === 'every_n_months' ? parseInt(data.get('frequency_months')?.toString() || '1') : null;
+		const anchor_date = data.get('anchor_date')?.toString() || null;
+		const due_day = anchor_date ? new Date(anchor_date + 'T00:00:00').getDate() : parseInt(data.get('due_day')?.toString() || '1');
 
 		if (!id) return fail(400, { error: 'Invalid bill ID' });
 		if (!name) return fail(400, { error: 'Name is required' });
 		if (amount <= 0) return fail(400, { error: 'Amount must be greater than 0' });
-		if (due_day < 1 || due_day > 31) return fail(400, { error: 'Due day must be between 1 and 31' });
 
-		await db.prepare('UPDATE bills SET name = ?, amount = ?, due_day = ?, updated_at = datetime(\'now\') WHERE id = ?')
-			.bind(name, amount, due_day, id).run();
+		await db.prepare(
+			'UPDATE bills SET name = ?, amount = ?, due_day = ?, frequency = ?, frequency_months = ?, anchor_date = ?, updated_at = datetime(\'now\') WHERE id = ?'
+		).bind(name, amount, due_day, frequency, frequency_months, anchor_date, id).run();
+
+		return { success: true };
+	},
+
+	markPaid: async ({ request, platform }) => {
+		const db = platform?.env?.DB;
+		if (!db) return fail(500, { error: 'Database not available' });
+
+		const data = await request.formData();
+		const id = parseInt(data.get('id')?.toString() || '0');
+
+		if (!id) return fail(400, { error: 'Invalid bill ID' });
+
+		// Set paid_through to today
+		const today = new Date().toISOString().split('T')[0];
+		await db.prepare('UPDATE bills SET paid_through = ?, updated_at = datetime(\'now\') WHERE id = ?')
+			.bind(today, id).run();
 
 		return { success: true };
 	}
