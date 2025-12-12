@@ -218,10 +218,11 @@ export const load: PageServerLoad = async ({ platform }) => {
 	const nextFriday = getNextFriday();
 
 	const bills: Bill[] = rows.map((row: BillRow) => processBill(row, today, nextFriday));
-	const upcomingBills = bills.filter(bill => bill.isDue);
 
-	// Sort upcoming by next due date
-	upcomingBills.sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime());
+	// Sort all bills by next due date (soonest first)
+	bills.sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime());
+
+	const upcomingBills = bills.filter(bill => bill.isDue);
 
 	return {
 		bills,
