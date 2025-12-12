@@ -6,6 +6,7 @@
 
 	let editingId = $state<number | null>(null);
 	let addFrequency = $state<'monthly' | 'annual' | 'every_n_months'>('monthly');
+	let showAddForm = $state(false);
 
 	function formatCurrency(amount: number): string {
 		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -83,62 +84,71 @@
 			</div>
 		{/if}
 
-		<div class="bg-gray-800 rounded-lg p-4 mb-6">
-			<h2 class="text-lg font-semibold mb-3">Add Bill</h2>
-			<form method="POST" action="?/add" class="space-y-3" use:enhance>
-				<div class="flex flex-col sm:flex-row gap-3">
-					<input
-						type="text"
-						name="name"
-						placeholder="Bill name"
-						required
-						class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-					/>
-					<input
-						type="number"
-						name="amount"
-						placeholder="Amount"
-						step="0.01"
-						min="0.01"
-						required
-						class="w-full sm:w-28 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-					/>
-				</div>
-				<div class="flex flex-col sm:flex-row gap-3">
-					<select
-						name="frequency"
-						bind:value={addFrequency}
-						class="bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-					>
-						<option value="monthly">Monthly</option>
-						<option value="annual">Annual</option>
-						<option value="every_n_months">Every N Months</option>
-					</select>
-					{#if addFrequency === 'every_n_months'}
+		<div class="bg-gray-800 rounded-lg mb-6">
+			<button
+				type="button"
+				onclick={() => showAddForm = !showAddForm}
+				class="w-full p-4 flex justify-between items-center text-left"
+			>
+				<h2 class="text-lg font-semibold">Add Bill</h2>
+				<span class="text-gray-400 text-xl">{showAddForm ? '−' : '+'}</span>
+			</button>
+			{#if showAddForm}
+				<form method="POST" action="?/add" class="space-y-3 px-4 pb-4" use:enhance={() => { return async ({ update }) => { await update(); showAddForm = false; }; }}>
+					<div class="flex flex-col sm:flex-row gap-3">
+						<input
+							type="text"
+							name="name"
+							placeholder="Bill name"
+							required
+							class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+						/>
 						<input
 							type="number"
-							name="frequency_months"
-							placeholder="Months"
-							min="1"
-							max="12"
+							name="amount"
+							placeholder="Amount"
+							step="0.01"
+							min="0.01"
 							required
-							class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+							class="w-full sm:w-28 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
 						/>
-					{/if}
-					<input
-						type="date"
-						name="anchor_date"
-						required
-						class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
-					/>
-					<button
-						type="submit"
-						class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium transition-colors"
-					>
-						Add
-					</button>
-				</div>
-			</form>
+					</div>
+					<div class="flex flex-col sm:flex-row gap-3">
+						<select
+							name="frequency"
+							bind:value={addFrequency}
+							class="bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+						>
+							<option value="monthly">Monthly</option>
+							<option value="annual">Annual</option>
+							<option value="every_n_months">Every N Months</option>
+						</select>
+						{#if addFrequency === 'every_n_months'}
+							<input
+								type="number"
+								name="frequency_months"
+								placeholder="Months"
+								min="1"
+								max="12"
+								required
+								class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+							/>
+						{/if}
+						<input
+							type="date"
+							name="anchor_date"
+							required
+							class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-2 focus:outline-none focus:border-blue-500"
+						/>
+						<button
+							type="submit"
+							class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-medium transition-colors"
+						>
+							Add
+						</button>
+					</div>
+				</form>
+			{/if}
 		</div>
 
 		<div class="bg-gray-800 rounded-lg p-4">
