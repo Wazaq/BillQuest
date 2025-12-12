@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { enhance } from '$app/forms';
 
 	let { data }: { data: PageData } = $props();
 
@@ -95,7 +96,7 @@
 					{#each data.bills as bill}
 						<li class="py-2 border-b border-gray-700 last:border-0">
 							{#if editingId === bill.id}
-								<form method="POST" action="?/edit" class="flex flex-col sm:flex-row gap-2" onsubmit={() => editingId = null}>
+								<form method="POST" action="?/edit" class="flex flex-col sm:flex-row gap-2" use:enhance={() => { return async ({ update }) => { await update(); editingId = null; }; }}>
 									<input type="hidden" name="id" value={bill.id} />
 									<input
 										type="text"
