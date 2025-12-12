@@ -98,5 +98,26 @@ export const actions: Actions = {
 		await db.prepare('DELETE FROM bills WHERE id = ?').bind(id).run();
 
 		return { success: true };
+	},
+
+	edit: async ({ request, platform }) => {
+		const db = platform?.env?.DB;
+		if (!db) return fail(500, { error: 'Database not available' });
+
+		const data = await request.formData();
+		const id = parseInt(data.get('id')?.toString() || '0');
+		const name = data.get('name')?.toString().trim();
+		const amount = parseFloat(data.get('amount')?.toString() || '0');
+		const due_day = parseInt(data.get('due_day')?.toString() || '0');
+
+		if (!id) return fail(400, { error: 'Invalid bill ID' });
+		if (!name) return fail(400, { error: 'Name is required' });
+		if (amount <= 0) return fail(400, { error: 'Amount must be greater than 0' });
+		if (due_day < 1 || due_day > 31) return fail(400, { error: 'Due day must be between 1 and 31' });
+
+		await db.prepare('UPDATE bills SET name = ?, amount = ?, due_day = ?, updated_at = datetime(\'now\') WHERE id = ?')
+			.bind(name, amount, due_day, id).run();
+
+		return { success: true };
 	}
 };

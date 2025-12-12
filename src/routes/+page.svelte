@@ -3,6 +3,8 @@
 
 	let { data }: { data: PageData } = $props();
 
+	let editingId = $state<number | null>(null);
+
 	function formatCurrency(amount: number): string {
 		return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
 	}
@@ -91,23 +93,78 @@
 			{#if data.bills.length > 0}
 				<ul class="space-y-2">
 					{#each data.bills as bill}
-						<li class="flex justify-between items-center py-2 border-b border-gray-700 last:border-0">
-							<div>
-								<span class="font-medium">{bill.name}</span>
-								<span class="text-gray-400 text-sm ml-2">Due: {getOrdinal(bill.due_day)}</span>
-							</div>
-							<div class="flex items-center gap-3">
-								<span class="font-mono">{formatCurrency(bill.amount)}</span>
-								<form method="POST" action="?/delete">
+						<li class="py-2 border-b border-gray-700 last:border-0">
+							{#if editingId === bill.id}
+								<form method="POST" action="?/edit" class="flex flex-col sm:flex-row gap-2" onsubmit={() => editingId = null}>
 									<input type="hidden" name="id" value={bill.id} />
-									<button
-										type="submit"
-										class="text-red-400 hover:text-red-300 text-sm"
-									>
-										Delete
-									</button>
+									<input
+										type="text"
+										name="name"
+										value={bill.name}
+										required
+										class="flex-1 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+									/>
+									<input
+										type="number"
+										name="amount"
+										value={bill.amount}
+										step="0.01"
+										min="0.01"
+										required
+										class="w-full sm:w-24 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+									/>
+									<input
+										type="number"
+										name="due_day"
+										value={bill.due_day}
+										min="1"
+										max="31"
+										required
+										class="w-full sm:w-16 bg-gray-700 border border-gray-600 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+									/>
+									<div class="flex gap-2">
+										<button
+											type="submit"
+											class="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+										>
+											Save
+										</button>
+										<button
+											type="button"
+											onclick={() => editingId = null}
+											class="bg-gray-600 hover:bg-gray-500 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+										>
+											Cancel
+										</button>
+									</div>
 								</form>
-							</div>
+							{:else}
+								<div class="flex justify-between items-center">
+									<div>
+										<span class="font-medium">{bill.name}</span>
+										<span class="text-gray-400 text-sm ml-2">Due: {getOrdinal(bill.due_day)}</span>
+									</div>
+									<div class="flex items-center gap-3">
+										<span class="font-mono">{formatCurrency(bill.amount)}</span>
+										<button
+											type="button"
+											onclick={() => editingId = bill.id}
+											class="text-blue-400 hover:text-blue-300 text-sm"
+										>
+											Edit
+										</button>
+										<form method="POST" action="?/delete">
+											<input type="hidden" name="id" value={bill.id} />
+											<button
+												type="submit"
+												class="text-red-400 hover:text-red-300 text-sm"
+											>
+												Delete
+											</button>
+										</form>
+									</div>
+								</div>
+							{/if}
 						</li>
 					{/each}
 				</ul>
