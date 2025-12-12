@@ -89,24 +89,31 @@ function getNextDueDate(bill: BillRow, today: Date): Date {
 function calculateOverdue(bill: BillRow, today: Date): { isOverdue: boolean; overdueCount: number; nextDueDate: Date } {
 	const paidThrough = parseDate(bill.paid_through);
 	const anchor = parseDate(bill.anchor_date);
-	const anchorDay = anchor ? anchor.getDate() : bill.due_day;
+	const todayStart = startOfDay(today);
+
+	// If never marked paid, bill is not overdue - only current cycle counts
+	// Overdue only applies once you've started tracking payments
+	if (!paidThrough) {
+		return {
+			isOverdue: false,
+			overdueCount: 0,
+			nextDueDate: getNextDueDate(bill, today)
+		};
+	}
 
 	let overdueCount = 0;
 	let checkDate: Date;
 
 	if (bill.frequency === 'monthly') {
-		// Start from anchor or a reasonable starting point
-		checkDate = anchor ? new Date(anchor) : new Date(today.getFullYear(), today.getMonth(), anchorDay);
-
-		// Go back to find earliest unpaid
-		while (checkDate > (paidThrough || new Date(0))) {
-			checkDate.setMonth(checkDate.getMonth() - 1);
+		const anchorDay = anchor ? anchor.getDate() : bill.due_day;
+		// Start from the month after paid_through
+		checkDate = new Date(paidThrough.getFullYear(), paidThrough.getMonth(), anchorDay);
+		if (checkDate <= paidThrough) {
+			checkDate.setMonth(checkDate.getMonth() + 1);
 		}
-		checkDate.setMonth(checkDate.getMonth() + 1);
 
-		// Count overdue periods
-		const todayStart = startOfDay(today);
-		while (checkDate < todayStart && (!paidThrough || checkDate > paidThrough)) {
+		// Count overdue periods (due dates that have passed since last payment)
+		while (checkDate < todayStart) {
 			overdueCount++;
 			checkDate.setMonth(checkDate.getMonth() + 1);
 		}
@@ -120,12 +127,15 @@ function calculateOverdue(bill: BillRow, today: Date): { isOverdue: boolean; ove
 
 	if (bill.frequency === 'annual' && anchor) {
 		checkDate = new Date(anchor);
-		const todayStart = startOfDay(today);
 
+		// Move to first occurrence after paid_through
+		while (checkDate <= paidThrough) {
+			checkDate.setFullYear(checkDate.getFullYear() + 1);
+		}
+
+		// Count overdue periods
 		while (checkDate < todayStart) {
-			if (!paidThrough || checkDate > paidThrough) {
-				overdueCount++;
-			}
+			overdueCount++;
 			checkDate.setFullYear(checkDate.getFullYear() + 1);
 		}
 
@@ -139,12 +149,15 @@ function calculateOverdue(bill: BillRow, today: Date): { isOverdue: boolean; ove
 	if (bill.frequency === 'every_n_months' && anchor && bill.frequency_months) {
 		checkDate = new Date(anchor);
 		const months = bill.frequency_months;
-		const todayStart = startOfDay(today);
 
+		// Move to first occurrence after paid_through
+		while (checkDate <= paidThrough) {
+			checkDate.setMonth(checkDate.getMonth() + months);
+		}
+
+		// Count overdue periods
 		while (checkDate < todayStart) {
-			if (!paidThrough || checkDate > paidThrough) {
-				overdueCount++;
-			}
+			overdueCount++;
 			checkDate.setMonth(checkDate.getMonth() + months);
 		}
 
