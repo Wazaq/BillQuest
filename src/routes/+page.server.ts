@@ -192,14 +192,8 @@ function processBill(row: BillRow, today: Date, nextFriday: Date): Bill {
 	const isDueBeforeFriday = nextDueDate <= nextFriday && !isPaidForNextCycle;
 	const isDue = isOverdue || isDueBeforeFriday;
 
-	// Effective amount includes overdue cycles plus current if due
-	let effectiveAmount = row.amount * overdueCount;
-	if (isDueBeforeFriday && !isOverdue) {
-		effectiveAmount = row.amount;
-	} else if (isDueBeforeFriday && isOverdue) {
-		// Check if next due is also in window
-		effectiveAmount = row.amount * (overdueCount + 1);
-	}
+	// Effective amount = base amount * number of unpaid cycles (minimum 1 if due)
+	const effectiveAmount = isDue ? row.amount * Math.max(overdueCount, 1) : row.amount;
 
 	return {
 		...row,
