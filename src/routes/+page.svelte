@@ -59,15 +59,15 @@
 										</span>
 									{/if}
 								</div>
-								<div class="flex items-center gap-2">
+								<div class="flex items-center gap-3">
 									<span class="font-mono">{formatCurrency(bill.effectiveAmount)}</span>
 									<form method="POST" action="?/markPaid" use:enhance>
 										<input type="hidden" name="id" value={bill.id} />
 										<button
 											type="submit"
-											class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded transition-colors"
+											class="bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm px-4 py-2 rounded transition-colors min-h-[44px] min-w-[44px]"
 										>
-											Paid
+											Mark Paid
 										</button>
 									</form>
 								</div>
