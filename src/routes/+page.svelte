@@ -47,25 +47,25 @@
 				{#if data.upcomingBills.length > 0}
 					<ul class="space-y-2">
 						{#each data.upcomingBills as bill}
-							<li class="flex justify-between items-center">
-								<div class="flex items-center gap-2">
+							<li class="py-2">
+								<div class="flex justify-between items-center">
 									<span>
 										{bill.name}
 										<span class="text-amber-400/70 text-sm">({formatDueDate(bill)})</span>
 									</span>
+									<span class="font-mono">{formatCurrency(bill.effectiveAmount)}</span>
+								</div>
+								<div class="flex items-center gap-2 mt-2">
 									{#if bill.isOverdue}
 										<span class="bg-red-600 text-white text-xs px-1.5 py-0.5 rounded font-medium">
 											OVERDUE ({bill.overdueCount})
 										</span>
 									{/if}
-								</div>
-								<div class="flex items-center gap-3">
-									<span class="font-mono">{formatCurrency(bill.effectiveAmount)}</span>
-									<form method="POST" action="?/markPaid" use:enhance>
+									<form method="POST" action="?/markPaid" use:enhance class="ml-auto">
 										<input type="hidden" name="id" value={bill.id} />
 										<button
 											type="submit"
-											class="bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm px-4 py-2 rounded transition-colors min-h-[44px] min-w-[44px]"
+											class="bg-green-600 hover:bg-green-700 active:bg-green-800 text-white text-sm px-4 py-2 rounded transition-colors min-h-[44px]"
 										>
 											Mark Paid
 										</button>
