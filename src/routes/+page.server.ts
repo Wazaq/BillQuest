@@ -94,16 +94,34 @@ function calculateOverdue(bill: BillRow, today: Date): { isOverdue: boolean; ove
 	// If never marked paid, check if current cycle's due date has passed
 	if (!paidThrough) {
 		const nextDue = getNextDueDate(bill, today);
-		const anchorDay = anchor ? anchor.getDate() : bill.due_day;
 
-		// Check if this month's due date has already passed
-		const thisMonthDue = new Date(today.getFullYear(), today.getMonth(), anchorDay);
-		const isPastDue = thisMonthDue < todayStart && nextDue > todayStart;
+		if (bill.frequency === 'monthly') {
+			// For monthly: check if this month's due date has passed
+			const anchorDay = anchor ? anchor.getDate() : bill.due_day;
+			const thisMonthDue = new Date(today.getFullYear(), today.getMonth(), anchorDay);
+			const isPastDue = thisMonthDue < todayStart && nextDue > todayStart;
 
+			return {
+				isOverdue: isPastDue,
+				overdueCount: isPastDue ? 1 : 0,
+				nextDueDate: isPastDue ? thisMonthDue : nextDue
+			};
+		}
+
+		// For annual/every_n_months: only overdue if anchor date itself has passed
+		if (anchor && anchor < todayStart) {
+			return {
+				isOverdue: true,
+				overdueCount: 1,
+				nextDueDate: anchor
+			};
+		}
+
+		// Not yet due
 		return {
-			isOverdue: isPastDue,
-			overdueCount: isPastDue ? 1 : 0,
-			nextDueDate: isPastDue ? thisMonthDue : nextDue
+			isOverdue: false,
+			overdueCount: 0,
+			nextDueDate: nextDue
 		};
 	}
 
